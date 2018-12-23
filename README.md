@@ -1,5 +1,5 @@
-## Applied Data Science Projects
-## DS Capstone Projects
+### Applied Data Science Projects
+### DS Capstone Projects
 
 **NOTES** 
 
