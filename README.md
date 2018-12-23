@@ -1,6 +1,8 @@
 ### Applied Data Science Projects
 ### DS Capstone Projects
 
+
+
 **NOTES** 
 
 - When accessing the files in GitHub it might fail to load large files (>1MB). Try refreshing or downloading these files
