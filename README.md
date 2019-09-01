@@ -1,5 +1,6 @@
-### Applied Data Science Projects
-### DS Capstone Projects
+### Applied Data Science Project
+### Industry Case-Study Project
+### Data Science Capstone Project
 
 <hr>
 **NOTES** 
