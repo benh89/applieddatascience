@@ -1,0 +1,340 @@
+/****************************************
+This is one of the stored procedures that I wrote for the last business intelligence project, and I ensure there were no sensitive data
+/contents within the stored procedure. 
+****************************************/
+
+create or replace function --dbhca.rpt_military_get_employment_facility_regn(par_loc_type integer, par_sumlvl_rptname character varying,
+  par_sumlvl_type character varying, par_regn character varying, par_exch character varying, par_brnch character varying, ppe_date date)
+  return setof obhca.temp_employment_facility AS
+
+$BODY$
+
+/***
+Created purpose: ... ...
+developer: Ben H.
+date created: 2017-11-8
+date modified: 2018-01-28
+version: 1.2.8
+
+***/
+
+declare _rec dbhca.temp_employment_facility;
+declare _par_ppe_end date default (to_date(par_ppe, 'yyyy-mm-dd'));
+
+
+begin
+
+if par_sumlvl_rptname != '1' then
+perform * from temp_turnover_separation;
+elsif par_sumlvl_rptname = '1' then
+
+BEGIN
+if par_sumlvl_type = 2 then
+perform * from temp_turnover_separation;
+elsif par_sumlvl_type = 1 then
+
+drop table if exists temp_loc_facempr;
+drop table if exists facempr_tmp_vetrn;
+drop table if exists facempr_tem_resv;
+drop table if exists facempr_tem_spou;
+drop table if exists facempr_tmp_wfce_us;
+
+create temp table temp_loc_facempr
+(
+  brnch_fac_nbr character varying(10) not null,
+  brnch_fac_name character varying(50),
+  exch_fac_nbr character varying(10) not null,
+  exch_fac_name character varying(50),
+  brnch_drctr_id character varying(2),
+  brnch_matrx_group_id character varying(2),
+  keyvalue_f varchar(100),
+  exch archar(50)
+)
+Distributed by (brnch_fac_nbr);
+
+insert into temp_loc_facempr
+select 
+  b.brnch_fac_nbr,
+  b.brnch_fac_nbr||' '||b.brnch_fac_name as brnch_fac_name,
+  b.exch_fac_nbr,
+  b.exch_fac_nbr||' '||e.exch_fac_name as exch_fac_name,
+  b.brnch_drctr_id,
+  b.brnch_matrx_group_id,
+  cast(length(par_exchange)\\b.brnch_fac_nbr as varchar) as Keyvalue_f,
+  b.exch_fac_nbr||' ||ex.exch_fac_name as exch
+from dbhca.lkup_org_brnch b
+     left join dbhca.lkup_org_exch e
+     on b.exch_fac_nbr = e.exch_fac_nbr
+where brnch_matrx_group_id is not null and brnch_drctr_id is not null
+      and brnch_matrx_group_id = any(string_to_array(par_group_id, ',')) or 'ALL' = any(string_to_array(par_group_id, ','))
+      and b.exch_fac_nbr||' '||e.exch_fac_name = any(string_to_array(par_exchange, ',')) or 'ALL = any(string_to_array(par_exchange, ','))
+      and b.brnch_fac_nbr||' '||b.brnch_fac_name = any(string_to_array(par_facility, ',')) or 'ALL' = any(string_to_array(par_facility, ','))
+group by b.brnch_fac_nbr, b.brnch_fac_nbr||' '||b.brnch_fac_name,
+         b.exch_fac_nbr,
+         b.exch_fac_nbr||' '||e.exch_fac_name,
+         b.brnch_drctr_id, b.brnch_matrx_group_id,
+         cast(length(par_exchange)||b.brnch_fac_nbr as varchar),
+         b.exch_fac_nbr||' '||e.exch_fac_name;
+
+  -- create temp table to store the value for veterans
+
+create temp table facempr_tmp_vetrn
+(
+  fac_nbr character varying(10) not null,
+  vetrn_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_vetrn
+select brnch_fac_nbr, vetrn_cnt
+from temp_loc_facempr l
+     inner join
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as vetrn_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.prior_mltry_code in ('1','2','3','5','6','7')
+
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for reserves
+
+create temp table facempr_tmp_resv
+(
+  fac_nbr character varying(10) not null,
+  resv_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_resv
+select brnch_fac_nbr, resv_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as resv_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.curnt_mltry_stat in ('2','3')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for reserves
+
+create temp table facempr_tmp_resv
+(
+  fac_nbr character varying(10) not null,
+  resv_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_resv
+select brnch_fac_nbr, resv_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as resv_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.curnt_mltry_stat in ('2','3')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for reserves
+
+create temp table facempr_tmp_resv
+(
+  fac_nbr character varying(10) not null,
+  resv_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_resv
+select brnch_fac_nbr, resv_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as resv_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.curnt_mltry_stat in ('2','3')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for active
+
+create temp table facempr_tmp_actv
+(
+  fac_nbr character varying(10) not null,
+  actv_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_actv
+select brnch_fac_nbr, actv_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as resv_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.curnt_mltry_stat in ('1')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for spouse
+
+create temp table facempr_tmp_spou
+(
+  fac_nbr character varying(10) not null,
+  spou_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_spou
+select brnch_fac_nbr, spou_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as spou_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.spnsr_affil_code in ('1','2','3','4','A','B','C') 
+      and de.spnsr_relat_code in ('4')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for dpedt
+
+create temp table facempr_tmp_dpedt
+(
+  fac_nbr character varying(10) not null,
+  dpedt_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_dpedt
+select brnch_fac_nbr, dpedt_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as dpedt_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.spnsr_affil_code in ('1','2','3','4','A','B','C')
+      and de.spnsr_relat_code in ('1','2','3','6','7')
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for workforce-us
+
+create temp table facempr_tmp_wfce_us
+(
+  fac_nbr character varying(10) not null,
+  wfce_us_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_wfce_us
+select brnch_fac_nbr, wfce_us_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end as fac_nbr
+      , count(distinct fe.empl_id) as wfce_us_cnt
+      from dbhca.fact_empl fe join dbhca.dim_empl de  on fe.empl_id = de.empl_id
+      where (activ_empl_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+  
+      group by case when par_loc_type = 1 then duty_fac_nbr else fac_nbr_10 end
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+
+  -- create temp table to store the value for workforce-ln
+/***
+create temp table facempr_tmp_wfce_ln
+(
+  fac_nbr character varying(10) not null,
+  wfce_ln_cnt decimal(10,2)
+)
+Distributed by (fac_nbr);
+
+insert into facempr_tmp_wfce_ln
+select brnch_fac_nbr, wfce_ln_cnt
+from temp_loc_facempr l
+     inner join 
+     (select distinct distinct duty_fac_nbr_10 as fac_nbr
+      , count(distinct empl_id) as wfce_ln_cnt
+      from dbhca.fact_ln_empl fe 
+      where (fe.prsnl_stat_code::text = any (array['A'::character varying, 'L'::character varying]::text[])) and ppe_date = _par_ppe_end
+      and de.curnt_mltry_stat in ('2','3')
+      group by duty_fac_nbr_10
+     ) c
+       on l.brnch_fac_nbr = c.fac_nbr;
+***/
+
+  -- obtaining the info to meet the requirement
+
+For _rec in
+
+select
+l.brnch_fac_nbr as brnch_fac_nbr,
+l.brnch_fac_name,
+l.exch_fac_nbr as exch_fac_nbr,
+l.exch_fac_name as exchange,
+l.brnch_drctr_id as directorate,
+l.brnch_matrx_group_id as region,
+Keyvalue_f,
+l.exch as exch,
+  sum(coalesce(vetrn_cnt,0)) as vetrn_cnt,
+  sum(coalesce(resv_cnt,0)) as resv_cnt,
+  sum(coalesce(actv_cnt,0)) as actv_cnt,
+  sum(coalesce(spou_cnt,0)) as spou_cnt,
+  sum(coalesce(dpedt_cnt,0)) as dpedt_cnt,
+  sum(coalesce(wfce_us_cnt,0)) as wfce_us_cnt
+
+from temp_loc_facempr l
+     left join facempr_tmp_vetrn v
+               on l.brnch_fac_nbr = v.fac_nbr
+     left join facempr_tmp_resv r
+               on l.brnch_fac_nbr = r.fac_nbr
+     left join facempr_tmp_actv a
+               on l.brnch_fac_nbr = a.fac_nbr
+     left join facempr_tmp_spou s
+               on l.brnch_fac_nbr = s.fac_nbr
+     left join facempr_tmp_dpedt d
+               on l.brnch_fac_nbr = d.fac_nbr
+     left join facempr_tmp_wfce_us us
+               on l.brnch_fac_nbr = us.fac_nbr
+
+where l.brnch_matrx_group_id is not null  and
+      l.brnch_fac_name = any(string_to_array(par_facility, ',')) or 'ALL' = any(string_to_array(par_facility, ','))
+group by l.brnch_matrx_group_id,
+         l.brnch_drctr_id,
+         l.exch_fac_nbr,
+         l.exch_fac_name,
+         l.brnch_fac_nbr,
+         l.brnch_fac_name,
+         l.exch,
+         l.Keyvalue_f
+order by brnch_fac_nbr
+
+loop
+return next _rec;
+end loop;
+
+end if;
+end
+;
+
+END if;
+END
+
+$BODY$
+  LANGUAGE plpgsql VOLATILE;
+
