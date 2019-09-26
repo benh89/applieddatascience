@@ -1,5 +1,5 @@
 /****************************************
-This is one (medium size) of the stored procedures that I wrote for the last business intelligence project, and I ensure there were no sensitive data
+This is one (medium size) of the stored procedures that I wrote for last business intelligence project, and I ensure there were no sensitive data
 /contents within the stored procedure. 
 ****************************************/
 
