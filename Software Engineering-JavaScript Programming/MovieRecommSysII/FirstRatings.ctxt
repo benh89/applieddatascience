@@ -1,0 +1,9 @@
+#BlueJ class context
+comment0.target=FirstRatings
+comment1.params=filename
+comment1.target=java.util.ArrayList\ loadMovies(java.lang.String)
+comment2.params=filename
+comment2.target=java.util.ArrayList\ loadRaters(java.lang.String)
+comment3.params=
+comment3.target=void\ raterTester()
+numComments=4
